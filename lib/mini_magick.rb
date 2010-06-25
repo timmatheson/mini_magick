@@ -5,6 +5,16 @@ require "open3"
 
 require File.join(File.dirname(__FILE__), '/image_temp_file')
 
+class MyLogger
+  def self.logger(msg)
+    begin
+      $stdout.puts("#{File.basename(__FILE__)}@#{__LINE__}: #{msg}")
+    rescue Exception => e
+      $stdout.puts("MiniMagick Logger Error: #{e.message}")
+    end
+  end
+end
+
 module MiniMagick
   class MiniMagickError < RuntimeError; end
 
@@ -19,6 +29,8 @@ module MiniMagick
       def from_blob(blob, ext = nil)
         begin
           tempfile = ImageTempFile.new(ext)
+          # debug
+          MyLogger.logger "Writing tempfile to #{tempfile.path}"
           tempfile.binmode
           tempfile.write(blob)
         ensure
@@ -31,6 +43,8 @@ module MiniMagick
       # Use this if you don't want to overwrite the image file
       def open(image_path)
         File.open(image_path, "rb") do |f|
+          # debug
+          MyLogger.logger "Opening to #{image_path}"
           self.from_blob(f.read, File.extname(image_path))
         end
       end
@@ -42,7 +56,8 @@ module MiniMagick
     def initialize(input_path, tempfile=nil)
       @path = input_path
       @tempfile = tempfile # ensures that the tempfile will stick around until this image is garbage collected.
-
+      # debug
+      MyLogger.logger "Init with #{tempfile.path}"
       # Ensure that the file is an image
       run_command("identify", @path)
     end
@@ -86,22 +101,26 @@ module MiniMagick
       old_path = @path.dup
       @path.sub!(/(\.\w+)?$/, ".#{format}")
       File.delete(old_path) unless old_path == @path
-
+      MyLogger.logger "Changing path from #{old_path} to #{@path} and removing #{old_path}"
       unless File.exists?(@path)
         begin
-          FileUtils.copy_file(@path.sub(".#{format}", "-#{page}.#{format}"), @path)
+          copy_from_path = @path.sub(".#{format}", "-#{page}.#{format}")
+          MyLogger.logger "Copying #{copy_from_path} to #{@path}"
+          FileUtils.copy_file(copy_from_path, @path)
         rescue => e
           raise MiniMagickError, "Unable to format to #{format}; #{e}" unless File.exist?(@path)
         end
       end
     ensure
       Dir[@path.sub(/(\.\w+)?$/, "-[0-9]*.#{format}")].each do |fname|
+        MyLogger.logger "Unlink file #{fname}"
         File.unlink(fname)
       end
     end
 
     # Writes the temporary image that we are using for processing to the output path
     def write(output_path)
+      MyLogger.logger "Writing to #{output_path}"
       FileUtils.copy_file @path, output_path
       run_command "identify", output_path # Verify that we have a good image
     end
